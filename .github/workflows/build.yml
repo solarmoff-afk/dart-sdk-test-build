@@ -17,7 +17,8 @@ jobs:
         path: |
           depot_tools
           dart-sdk-source
-        key: ${{ runner.os }}-dart-3.9.0
+        # ИЗМЕНЯЕМ КЛЮЧ, ЧТОБЫ СБРОСИТЬ СТАРЫЙ "ОТРАВЛЕННЫЙ" КЭШ
+        key: ${{ runner.os }}-dart-3.9.0-v2
 
     - name: Install dependencies
       run: |
@@ -33,21 +34,15 @@ jobs:
       run: |
         echo "$(pwd)/depot_tools" >> $GITHUB_PATH
 
+    # Двухэтапная синхронизация, которая сработает на чистом запуске
     - name: Download Dart 3.9.0 sources (Two-Step Sync)
       if: steps.cache-dart.outputs.cache-hit != 'true'
       run: |
-        mkdir -p dart-sdk-source
+        mkdir dart-sdk-source
         cd dart-sdk-source
         gclient config "https://dart.googlesource.com/sdk.git@3.9.0"
-        
-        # Создаем директорию для gclient_args.gni
-        mkdir -p sdk/build/config
-        
-        # ШАГ 1: "Тупое" скачивание файлов без запуска скриптов-хуков
         echo "--- Running initial sync (no hooks)... ---"
         gclient sync --force --delete_unversioned_trees --no-history --nohooks
-        
-        # ШАГ 2: Повторный запуск, который теперь запустит хуки на уже скачанных файлах
         echo "--- Running sync again to execute hooks... ---"
         gclient sync --force --delete_unversioned_trees --no-history
 
