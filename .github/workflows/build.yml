@@ -45,12 +45,13 @@ jobs:
         cd ..
         gclient sync --force --delete_unversioned_trees
 
-    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: ПРАВИЛЬНЫЙ ПОРЯДОК КОМАНД ---
     - name: Configure the build (gn)
       run: |
         cd dart-sdk-source/sdk
-        # ВЫЗЫВАЕМ НАСТОЯЩИЙ gn, А НЕ СКРИПТ-ОБЕРТКУ
-        gn gen out/android_release_arm64
+        # ШАГ 1: СНАЧАЛА создаем директорию
+        mkdir -p out/android_release_arm64
+        # ШАГ 2: ПОТОМ создаем файл конфигурации args.gn ВНУТРИ нее
         echo '
         target_os = "android"
         target_cpu = "arm64"
@@ -63,6 +64,8 @@ jobs:
         is_clang = true
         use_goma = false
         ' > out/android_release_arm64/args.gn
+        # ШАГ 3: И ТОЛЬКО ТЕПЕРЬ запускаем gn gen. Теперь он найдет конфиг.
+        gn gen out/android_release_arm64
 
     - name: Compile gen_snapshot (ninja)
       run: |
