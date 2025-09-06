@@ -17,7 +17,8 @@ jobs:
         path: |
           depot_tools
           dart-sdk-source
-        key: ${{ runner.os }}-dart-3.9.0-v4
+        # НОВЫЙ КЛЮЧ КЭША, ЧТОБЫ ГАРАНТИРОВАТЬ ЧИСТЫЙ СТАРТ
+        key: ${{ runner.os }}-dart-3.9.0-v5
 
     - name: Install dependencies
       run: |
@@ -33,7 +34,8 @@ jobs:
       run: |
         echo "$(pwd)/depot_tools" >> $GITHUB_PATH
 
-    - name: Download Dart 3.9.0 sources (Full History)
+    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+    - name: Download Dart 3.9.0 sources and Toolchains
       if: steps.cache-dart.outputs.cache-hit != 'true'
       run: |
         mkdir dart-sdk-source
@@ -44,14 +46,15 @@ jobs:
         git checkout 3.9.0
         cd ..
         gclient sync --force --delete_unversioned_trees
+        
+        # ШАГ 5: ПРИНУДИТЕЛЬНО ЗАПУСКАЕМ СКАЧИВАНИЕ NDK И ДРУГИХ ИНСТРУМЕНТОВ
+        echo "--- [5/5] Running hooks to download toolchains (NDK)... ---"
+        gclient runhooks
 
-    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ: ПРАВИЛЬНЫЙ ПОРЯДОК КОМАНД ---
     - name: Configure the build (gn)
       run: |
         cd dart-sdk-source/sdk
-        # ШАГ 1: СНАЧАЛА создаем директорию
         mkdir -p out/android_release_arm64
-        # ШАГ 2: ПОТОМ создаем файл конфигурации args.gn ВНУТРИ нее
         echo '
         target_os = "android"
         target_cpu = "arm64"
@@ -64,7 +67,6 @@ jobs:
         is_clang = true
         use_goma = false
         ' > out/android_release_arm64/args.gn
-        # ШАГ 3: И ТОЛЬКО ТЕПЕРЬ запускаем gn gen. Теперь он найдет конфиг.
         gn gen out/android_release_arm64
 
     - name: Compile gen_snapshot (ninja)
@@ -81,4 +83,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: gen_snapshot-android-arm64
-        path: dart-sdk-source/sdk/out/android_release_arm64/gen_snapshot.zip
+        path: dart-sdk-source/sdk/out/android_release_arm64/gen_snapshot.zip.
