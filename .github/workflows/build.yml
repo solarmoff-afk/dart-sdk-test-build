@@ -1,52 +1,89 @@
-name: Build gen_snapshot for Android ARM64 (The Right Way)
+name: Build gen_snapshot for Android ARM64 (FINAL VERSION)
+
 on: [workflow_dispatch]
+
 jobs:
   build:
-    container:
-      image: docker.io/library/debian
     runs-on: ubuntu-latest
+
     steps:
-      - name: Install base dependencies in Debian
-        run: |
-          apt-get update
-          apt-get install --no-install-recommends -y ca-certificates curl git python3
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Download Dart SDK sources and Android dependencies
-        run: |
-          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          export DEPOT_TOOLS_UPDATE=0 PATH=$PWD/depot_tools:$PATH
-          mkdir dart-sdk
-          cd dart-sdk
-          gclient config --name sdk --custom-var download_android_deps=True "https://dart.googlesource.com/sdk.git@3.9.0"
-          gclient sync --no-history
-      - name: Create custom args.gn for Android build
-        run: |
-          cd dart-sdk/sdk
-          mkdir -p out/ReleaseX64_android_arm64
-          echo '
-          target_os = "android"
-          target_cpu = "arm64"
-          host_cpu = "x64"
-          is_debug = false
-          is_product = true
-          dart_vm_product = true
-          dart_use_compressed_pointers = true
-          is_component_build = false
-          is_clang = true
-          use_goma = false
-          ' > out/ReleaseX64_android_arm64/args.gn
-      - name: Build
-        run: |
-          export DEPOT_TOOLS_UPDATE=0 PATH=$PWD/depot_tools:$PATH
-          cd dart-sdk/sdk
-          ./tools/build.py --mode release --os android --arch arm64 create_sdk
-      - name: Archive and Upload Artifact
-        run: |
-          cd dart-sdk/sdk/out/ReleaseX64_android_arm64
-          tar -czf gen_snapshot.tar.gz gen_snapshot*
-          mv gen_snapshot.tar.gz ../../../
-        uses: actions/upload-artifact@v4
-        with:
-          name: gen_snapshot-android-arm64
-          path: gen_snapshot.tar.gz
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Cache depot_tools and Dart SDK sources
+      id: cache-dart
+      uses: actions/cache@v4
+      with:
+        path: |
+          depot_tools
+          dart-sdk-source
+        key: ${{ runner.os }}-dart-3.9.0-final-final
+
+    - name: Install dependencies on Ubuntu
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential curl git python3 python3-setuptools unzip
+
+    - name: Install depot_tools
+      if: steps.cache-dart.outputs.cache-hit != 'true'
+      run: |
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+    
+    - name: Add depot_tools to PATH
+      run: |
+        echo "$(pwd)/depot_tools" >> $GITHUB_PATH
+
+    - name: Download Dart 3.9.0 sources (Full History Method)
+      if: steps.cache-dart.outputs.cache-hit != 'true'
+      run: |
+        mkdir dart-sdk-source
+        cd dart-sdk-source
+        gclient config "https://dart.googlesource.com/sdk.git"
+        gclient sync --force --delete_unversioned_trees
+        cd sdk
+        git fetch --tags
+        git checkout 3.9.0
+        cd ..
+        gclient sync --force --delete_unversioned_trees
+
+    - name: Manually Install Android NDK
+      run: |
+        echo "--- Downloading and installing NDK ---"
+        wget https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+        unzip android-ndk-r25c-linux.zip
+        mkdir -p dart-sdk-source/third_party/android_tools
+        mv android-ndk-r25c dart-sdk-source/third_party/android_tools/ndk
+
+    - name: Configure the build (gn) for Android
+      run: |
+        cd dart-sdk-source/sdk
+        mkdir -p out/android_release_arm64
+        echo '
+        target_os = "android"
+        target_cpu = "arm64"
+        host_cpu = "x64"
+        is_debug = false
+        is_product = true
+        dart_vm_product = true
+        dart_use_compressed_pointers = true
+        is_component_build = false
+        is_clang = true
+        use_goma = false
+        ' > out/android_release_arm64/args.gn
+        gn gen out/android_release_arm64
+
+    - name: Compile gen_snapshot (ninja)
+      run: |
+        cd dart-sdk-source/sdk
+        ninja -C out/android_release_arm64 gen_snapshot
+
+    - name: Archive the binary
+      run: |
+        cd dart-sdk-source/sdk/out/Release*
+        zip gen_snapshot.zip gen_snapshot*
+
+    - name: Upload gen_snapshot artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: gen_snapshot-android-arm64
+        path: dart-sdk-source/sdk/out/Release*/gen_snapshot.zip
