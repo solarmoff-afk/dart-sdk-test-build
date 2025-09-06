@@ -17,8 +17,8 @@ jobs:
         path: |
           depot_tools
           dart-sdk-source
-        # ИЗМЕНЯЕМ КЛЮЧ, ЧТОБЫ СБРОСИТЬ СТАРЫЙ "ОТРАВЛЕННЫЙ" КЭШ
-        key: ${{ runner.os }}-dart-3.9.0-v2
+        # НОВЫЙ КЛЮЧ КЭША, ЧТОБЫ ГАРАНТИРОВАТЬ ЧИСТЫЙ СТАРТ
+        key: ${{ runner.os }}-dart-3.9.0-v3
 
     - name: Install dependencies
       run: |
@@ -34,16 +34,29 @@ jobs:
       run: |
         echo "$(pwd)/depot_tools" >> $GITHUB_PATH
 
-    # Двухэтапная синхронизация, которая сработает на чистом запуске
-    - name: Download Dart 3.9.0 sources (Two-Step Sync)
+    # --- НОВЫЙ, ПРАВИЛЬНЫЙ ПРОЦЕСС ЗАГРУЗКИ ---
+    - name: Download Dart 3.9.0 sources (Correct Method)
       if: steps.cache-dart.outputs.cache-hit != 'true'
       run: |
         mkdir dart-sdk-source
         cd dart-sdk-source
-        gclient config "https://dart.googlesource.com/sdk.git@3.9.0"
-        echo "--- Running initial sync (no hooks)... ---"
-        gclient sync --force --delete_unversioned_trees --no-history --nohooks
-        echo "--- Running sync again to execute hooks... ---"
+        
+        # ШАГ 1: Конфигурация (БЕЗ ВЕРСИИ)
+        echo "--- [1/4] Configuring gclient ---"
+        gclient config "https://dart.googlesource.com/sdk.git"
+        
+        # ШАГ 2: Первичная синхронизация (скачиваем main ветку)
+        echo "--- [2/4] Initial sync to get the repository ---"
+        gclient sync --force --delete_unversioned_trees --no-history
+        
+        # ШАГ 3: Переключение на нужную версию (внутри папки sdk)
+        echo "--- [3/4] Switching to version 3.9.0 ---"
+        cd sdk
+        git checkout 3.9.0
+        cd ..
+        
+        # ШАГ 4: Финальная синхронизация (скачиваем зависимости для 3.9.0)
+        echo "--- [4/4] Final sync for 3.9.0 dependencies ---"
         gclient sync --force --delete_unversioned_trees --no-history
 
     - name: Configure the build (gn)
