@@ -18,7 +18,7 @@ jobs:
           depot_tools
           dart-sdk-source
         # НОВЫЙ КЛЮЧ КЭША, ЧТОБЫ ГАРАНТИРОВАТЬ ЧИСТЫЙ СТАРТ
-        key: ${{ runner.os }}-dart-3.9.0-v5
+        key: ${{ runner.os }}-dart-3.9.0-v6
 
     - name: Install dependencies
       run: |
@@ -34,8 +34,7 @@ jobs:
       run: |
         echo "$(pwd)/depot_tools" >> $GITHUB_PATH
 
-    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-    - name: Download Dart 3.9.0 sources and Toolchains
+    - name: Download Dart 3.9.0 sources and run hooks
       if: steps.cache-dart.outputs.cache-hit != 'true'
       run: |
         mkdir dart-sdk-source
@@ -46,10 +45,25 @@ jobs:
         git checkout 3.9.0
         cd ..
         gclient sync --force --delete_unversioned_trees
-        
-        # ШАГ 5: ПРИНУДИТЕЛЬНО ЗАПУСКАЕМ СКАЧИВАНИЕ NDK И ДРУГИХ ИНСТРУМЕНТОВ
-        echo "--- [5/5] Running hooks to download toolchains (NDK)... ---"
+        # Мы все еще запускаем runhooks, вдруг он делает что-то еще полезное
         gclient runhooks
+
+    # --- ГЛАВНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ ---
+    - name: Install and Link Android NDK
+      run: |
+        # ШАГ 1: Устанавливаем NDK с помощью надежного Action
+        # Мы используем env, чтобы передать путь к NDK следующему шагу
+        echo "ANDROID_NDK_HOME=$HOME/android-ndk-r25c" >> $GITHUB_ENV
+        # Устанавливаем NDK
+        wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+        unzip -q android-ndk-r25c-linux.zip -d $HOME
+        
+        # ШАГ 2: "Обманываем" систему сборки
+        echo "--- Creating symlink to NDK ---"
+        # Создаем папки, где ninja будет искать NDK
+        mkdir -p dart-sdk-source/third_party/android_tools
+        # Создаем "ярлык" (символическую ссылку)
+        ln -s $HOME/android-ndk-r25c dart-sdk-source/third_party/android_tools/ndk
 
     - name: Configure the build (gn)
       run: |
@@ -66,6 +80,8 @@ jobs:
         is_component_build = false
         is_clang = true
         use_goma = false
+        # Явно указываем путь к NDK, чтобы gn точно его нашел
+        android_ndk_root = "//third_party/android_tools/ndk"
         ' > out/android_release_arm64/args.gn
         gn gen out/android_release_arm64
 
