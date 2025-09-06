@@ -7,11 +7,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Шаг 1: Checkout
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Шаг 2: Кэширование
     - name: Cache depot_tools and Dart SDK sources
       id: cache-dart
       uses: actions/cache@v4
@@ -21,33 +19,30 @@ jobs:
           dart-sdk-source
         key: ${{ runner.os }}-dart-3.9.0
 
-    # Шаг 3: Установка зависимостей (С ИСПРАВЛЕНИЕМ)
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential curl git python3-setuptools
 
-    # Шаг 4: Установка depot_tools
     - name: Install depot_tools
       if: steps.cache-dart.outputs.cache-hit != 'true'
       run: |
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
     
-    # Шаг 5: Добавление depot_tools в PATH
     - name: Add depot_tools to PATH
       run: |
         echo "$(pwd)/depot_tools" >> $GITHUB_PATH
 
-    # Шаг 6: Загрузка исходников Dart 3.9.0
     - name: Download Dart 3.9.0 sources
       if: steps.cache-dart.outputs.cache-hit != 'true'
       run: |
         mkdir dart-sdk-source
         cd dart-sdk-source
         gclient config "https://dart.googlesource.com/sdk.git@3.9.0"
+        # СОЗДАЕМ НЕДОСТАЮЩУЮ ДИРЕКТОРИЮ ВРУЧНУЮ
+        mkdir -p sdk/build/config
         gclient sync --force --delete_unversioned_trees --no-history
 
-    # Шаг 7: Конфигурация сборки (gn)
     - name: Configure the build (gn)
       run: |
         cd dart-sdk-source/sdk
@@ -65,19 +60,16 @@ jobs:
         use_goma = false
         ' > out/android_release_arm64/args.gn
 
-    # Шаг 8: Компиляция gen_snapshot (ninja)
     - name: Compile gen_snapshot (ninja)
       run: |
         cd dart-sdk-source/sdk
         ninja -C out/android_release_arm64 gen_snapshot
 
-    # Шаг 9: Архивация результата
     - name: Archive the binary
       run: |
         cd dart-sdk-source/sdk/out/android_release_arm64
         zip gen_snapshot.zip gen_snapshot
 
-    # Шаг 10: Загрузка артефакта
     - name: Upload gen_snapshot artifact
       uses: actions/upload-artifact@v4
       with:
