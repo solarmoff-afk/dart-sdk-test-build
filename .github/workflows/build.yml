@@ -17,7 +17,7 @@ jobs:
         path: |
           depot_tools
           dart-sdk-source
-        key: ${{ runner.os }}-dart-3.9.0-v4 # Новый ключ, чтобы гарантировать чистый старт
+        key: ${{ runner.os }}-dart-3.9.0-v4
 
     - name: Install dependencies
       run: |
@@ -33,35 +33,24 @@ jobs:
       run: |
         echo "$(pwd)/depot_tools" >> $GITHUB_PATH
 
-    # --- НОВЫЙ, ПРАВИЛЬНЫЙ ПРОЦЕСС ЗАГРУЗКИ (БЕЗ --no-history) ---
     - name: Download Dart 3.9.0 sources (Full History)
       if: steps.cache-dart.outputs.cache-hit != 'true'
       run: |
         mkdir dart-sdk-source
         cd dart-sdk-source
-        
-        # ШАГ 1: Конфигурация (БЕЗ ВЕРСИИ)
-        echo "--- [1/4] Configuring gclient ---"
         gclient config "https://dart.googlesource.com/sdk.git"
-        
-        # ШАГ 2: Первичная синхронизация (скачиваем main ветку С ПОЛНОЙ ИСТОРИЕЙ)
-        echo "--- [2/4] Initial sync to get the repository ---"
         gclient sync --force --delete_unversioned_trees
-        
-        # ШАГ 3: Переключение на нужную версию (теперь это сработает)
-        echo "--- [3/4] Switching to version 3.9.0 ---"
         cd sdk
         git checkout 3.9.0
         cd ..
-        
-        # ШАГ 4: Финальная синхронизация (скачиваем зависимости для 3.9.0)
-        echo "--- [4/4] Final sync for 3.9.0 dependencies ---"
         gclient sync --force --delete_unversioned_trees
 
+    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
     - name: Configure the build (gn)
       run: |
         cd dart-sdk-source/sdk
-        python3 tools/gn.py gen out/android_release_arm64
+        # ВЫЗЫВАЕМ НАСТОЯЩИЙ gn, А НЕ СКРИПТ-ОБЕРТКУ
+        gn gen out/android_release_arm64
         echo '
         target_os = "android"
         target_cpu = "arm64"
