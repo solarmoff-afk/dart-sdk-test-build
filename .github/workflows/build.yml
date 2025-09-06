@@ -1,102 +1,69 @@
-name: Build gen_snapshot for Android ARM64
+name: Build gen_snapshot for Android ARM64 (Based on Official Method)
 
 on: [workflow_dispatch]
 
 jobs:
   build:
+    # Запускаемся в стандартной среде Ubuntu. Debian-контейнер для нашей
+    # единственной цели - избыточен и только усложнит всё.
+    # Главное - это команды, которые мы выполняем.
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Cache depot_tools and Dart SDK sources
-      id: cache-dart
-      uses: actions/cache@v4
-      with:
-        path: |
-          depot_tools
-          dart-sdk-source
-        # НОВЫЙ КЛЮЧ КЭША, ЧТОБЫ ГАРАНТИРОВАТЬ ЧИСТЫЙ СТАРТ
-        key: ${{ runner.os }}-dart-3.9.0-v6
-
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential curl git python3-setuptools
 
+    # --- НОВЫЙ, ПРАВИЛЬНЫЙ ПРОЦЕСС ---
+
     - name: Install depot_tools
-      if: steps.cache-dart.outputs.cache-hit != 'true'
       run: |
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-    
-    - name: Add depot_tools to PATH
-      run: |
         echo "$(pwd)/depot_tools" >> $GITHUB_PATH
 
-    - name: Download Dart 3.9.0 sources and run hooks
-      if: steps.cache-dart.outputs.cache-hit != 'true'
+    - name: Download Dart 3.9.0 sources and Android dependencies
       run: |
         mkdir dart-sdk-source
         cd dart-sdk-source
-        gclient config "https://dart.googlesource.com/sdk.git"
-        gclient sync --force --delete_unversioned_trees
+        
+        # ШАГ 1: Конфигурация. Без версии, но с "волшебной" переменной.
+        echo "--- [1/3] Configuring gclient with Android deps ---"
+        gclient config --name sdk --custom-var download_android_deps=True "https://dart.googlesource.com/sdk.git"
+        
+        # ШАГ 2: Синхронизация. Скачиваем main ветку.
+        echo "--- [2/3] Initial sync to get the repository ---"
+        gclient sync --force --delete_unversioned_trees --no-history
+        
+        # ШАГ 3: Переключение на 3.9.0 и финальная синхронизация зависимостей
+        # Мы можем объединить это в один шаг для простоты
+        echo "--- [3/3] Switching to 3.9.0 and final sync ---"
         cd sdk
+        git fetch --tags # Скачиваем все теги, чтобы git точно нашел 3.9.0
         git checkout 3.9.0
         cd ..
-        gclient sync --force --delete_unversioned_trees
-        # Мы все еще запускаем runhooks, вдруг он делает что-то еще полезное
-        gclient runhooks
+        gclient sync --force --delete_unversioned_trees --no-history
 
-    # --- ГЛАВНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ ---
-    - name: Install and Link Android NDK
-      run: |
-        # ШАГ 1: Устанавливаем NDK с помощью надежного Action
-        # Мы используем env, чтобы передать путь к NDK следующему шагу
-        echo "ANDROID_NDK_HOME=$HOME/android-ndk-r25c" >> $GITHUB_ENV
-        # Устанавливаем NDK
-        wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
-        unzip -q android-ndk-r25c-linux.zip -d $HOME
-        
-        # ШАГ 2: "Обманываем" систему сборки
-        echo "--- Creating symlink to NDK ---"
-        # Создаем папки, где ninja будет искать NDK
-        mkdir -p dart-sdk-source/third_party/android_tools
-        # Создаем "ярлык" (символическую ссылку)
-        ln -s $HOME/android-ndk-r25c dart-sdk-source/third_party/android_tools/ndk
-
-    - name: Configure the build (gn)
+    # --- ИСПОЛЬЗУЕМ ОФИЦИАЛЬНЫЙ СКРИПТ СБОРКИ ---
+    - name: Build the Dart SDK for Android ARM64
       run: |
         cd dart-sdk-source/sdk
-        mkdir -p out/android_release_arm64
-        echo '
-        target_os = "android"
-        target_cpu = "arm64"
-        host_cpu = "x64"
-        is_debug = false
-        is_product = true
-        dart_vm_product = true
-        dart_use_compressed_pointers = true
-        is_component_build = false
-        is_clang = true
-        use_goma = false
-        # Явно указываем путь к NDK, чтобы gn точно его нашел
-        android_ndk_root = "//third_party/android_tools/ndk"
-        ' > out/android_release_arm64/args.gn
-        gn gen out/android_release_arm64
-
-    - name: Compile gen_snapshot (ninja)
-      run: |
-        cd dart-sdk-source/sdk
-        ninja -C out/android_release_arm64 gen_snapshot
+        # Запускаем официальный скрипт, он сам вызовет gn и ninja с правильными параметрами.
+        # Мы просим его собрать create_sdk - это гарантирует, что gen_snapshot будет создан.
+        python3 ./tools/build.py --mode release --os android --arch arm64 create_sdk
 
     - name: Archive the binary
       run: |
-        cd dart-sdk-source/sdk/out/android_release_arm64
-        zip gen_snapshot.zip gen_snapshot
+        # Находим наш gen_snapshot в папке с результатами
+        # Имя может быть gen_snapshot или gen_snapshot_product_android_arm64
+        cd dart-sdk-source/sdk/out/ReleaseX64_android_arm64
+        zip gen_snapshot.zip gen_snapshot*
 
     - name: Upload gen_snapshot artifact
       uses: actions/upload-artifact@v4
       with:
         name: gen_snapshot-android-arm64
-        path: dart-sdk-source/sdk/out/android_release_arm64/gen_snapshot.zip.
+        path: dart-sdk-source/sdk/out/ReleaseX64_android_arm64/gen_snapshot.zip
