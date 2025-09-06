@@ -33,13 +33,15 @@ jobs:
       run: |
         echo "$(pwd)/depot_tools" >> $GITHUB_PATH
 
-    # --- ГЛАВНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ ---
     - name: Download Dart 3.9.0 sources (Two-Step Sync)
       if: steps.cache-dart.outputs.cache-hit != 'true'
       run: |
-        mkdir dart-sdk-source
+        mkdir -p dart-sdk-source
         cd dart-sdk-source
         gclient config "https://dart.googlesource.com/sdk.git@3.9.0"
+        
+        # Создаем директорию для gclient_args.gni
+        mkdir -p sdk/build/config
         
         # ШАГ 1: "Тупое" скачивание файлов без запуска скриптов-хуков
         echo "--- Running initial sync (no hooks)... ---"
