@@ -1,4 +1,4 @@
-name: Build gen_snapshot for Android ARM64 (The Right Way)
+name: Build gen_snapshot for Android ARM64
 on: [workflow_dispatch]
 jobs:
   build:
@@ -9,8 +9,19 @@ jobs:
       - name: Install build tools
         run: |
           apt-get update
-          apt-get install --no-install-recommends -y ca-certificates curl git python3
+          apt-get install --no-install-recommends -y ca-certificates curl git python3 tar
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Cache depot_tools and Dart SDK sources
+        id: cache-dart
+        uses: actions/cache@v4
+        with:
+          path: |
+            depot_tools
+            dart-sdk
+          key: ${{ runner.os }}-debian-dart-3.9.0-final
       - name: Fetch Dart SDK and Android Dependencies
+        if: steps.cache-dart.outputs.cache-hit != 'true'
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
           export DEPOT_TOOLS_UPDATE=0 PATH=$PWD/depot_tools:$PATH
@@ -39,12 +50,12 @@ jobs:
           export DEPOT_TOOLS_UPDATE=0 PATH=$PWD/depot_tools:$PATH
           cd dart-sdk/sdk
           ./tools/build.py --mode release --arch arm64 create_sdk
-      - name: Archive
+      - name: Archive the binary
         run: |
-          cd dart-sdk/sdk/out/ReleaseX64_android_arm64
+          cd dart-sdk/sdk/out/Release*
           tar -czf gen_snapshot.tar.gz gen_snapshot*
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: gen_snapshot-android-arm64
-          path: dart-sdk/sdk/out/ReleaseX64_android_arm64/gen_snapshot.tar.gz
+          path: dart-sdk/sdk/out/Release*/gen_snapshot.tar.gz
