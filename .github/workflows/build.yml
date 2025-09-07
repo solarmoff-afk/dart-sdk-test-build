@@ -1,7 +1,5 @@
-name: Build Full Dart SDK for Android ARM64 (FINAL, WITH STRIP)
-
+name: Build Full Dart SDK for Android ARM64 (The Final Version)
 on: [workflow_dispatch]
-
 jobs:
   compile:
     container:
@@ -21,7 +19,7 @@ jobs:
           path: |
             depot_tools
             dart-sdk
-          key: ${{ runner.os }}-debian-dart-3.9.0-final-safe-build
+          key: ${{ runner.os }}-debian-dart-3.9.0-the-very-final-one
       - name: Fetch Dart SDK and Android Dependencies
         if: steps.cache-dart.outputs.cache-hit != 'true'
         run: |
@@ -35,7 +33,7 @@ jobs:
         run: |
           export DEPOT_TOOLS_UPDATE=0 PATH=$PWD/depot_tools:$PATH
           cd dart-sdk/sdk
-          python3 ./tools/build.py --mode release --os android --arch arm64 create_sdk
+          python3 ./tools/build.py --mode release --os android --arch arm64c create_sdk
       - name: Upload RAW build output as a safety artifact
         uses: actions/upload-artifact@v4
         with:
@@ -54,21 +52,13 @@ jobs:
           name: raw-build-output
       - name: Strip and Archive the final SDK
         run: |
-          cd ReleaseX64_android_arm64
-
-          echo "--- Size before strip ---"
-          du -sh .
-          ls -lh gen_snapshot* dartaotruntime*
-
+          SNAPSHOT_DIR=$(find . -type d -name "*arm64c*")
+          echo "Found snapshot directory: $SNAPSHOT_DIR"
+          cd "$SNAPSHOT_DIR"
           strip gen_snapshot* dartaotruntime*
-
-          echo "--- Size after strip ---"
-          du -sh .
-          ls -lh gen_snapshot* dartaotruntime*
-
           tar -czf full_sdk_output.tar.gz .
       - name: Upload the final STRIPPED artifact
         uses: actions/upload-artifact@v4
         with:
-          name: full-dart-sdk-android-arm64-stripped
-          path: ReleaseX64_android_arm64/full_sdk_output.tar.gz
+          name: full-dart-sdk-android-arm64c-stripped
+          path: "**/full_sdk_output.tar.gz"
