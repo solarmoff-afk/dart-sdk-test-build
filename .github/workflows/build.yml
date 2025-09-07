@@ -1,62 +1,61 @@
-name: Build NATIVE Android gen_snapshot (The Right Way)
-
+name: Build Full Dart SDK for Android ARM64
 on: [workflow_dispatch]
-
 jobs:
-  build:
+  compile:
     container:
       image: docker.io/library/debian
-
     runs-on: ubuntu-latest
-
     steps:
       - name: Install build tools
         run: |
           apt-get update
           apt-get install --no-install-recommends -y ca-certificates curl git python3
-
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Cache depot_tools and Dart SDK sources
+        id: cache-dart
+        uses: actions/cache@v4
+        with:
+          path: |
+            depot_tools
+            dart-sdk
+          key: ${{ runner.os }}-debian-dart-3.9.0-bionic-build
       - name: Fetch Dart SDK and Android Dependencies
+        if: steps.cache-dart.outputs.cache-hit != 'true'
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
           export DEPOT_TOOLS_UPDATE=0 PATH=$PWD/depot_tools:$PATH
-
           mkdir dart-sdk
           cd dart-sdk
           gclient config --name sdk --custom-var download_android_deps=True "https://dart.googlesource.com/sdk.git@3.9.0"
           gclient sync --no-history
-
-      - name: Create custom args.gn to force NATIVE Android build
-        run: |
-          cd dart-sdk/sdk
-          mkdir -p out/ReleaseX64_android_arm64
-          echo '
-        
-          target_os = "android"
-          target_cpu = "arm64"
-          
-          host_os = "android"
-          host_cpu = "arm64"
-
-          is_debug = false
-          is_product = true
-          dart_vm_product = true
-          dart_use_compressed_pointers = true
-          is_component_build = false
-          is_clang = true
-          use_goma = false
-          ' > out/ReleaseX64_android_arm64/args.gn
-
-      - name: Build
+      - name: Build the full SDK for Android ARM64
         run: |
           export DEPOT_TOOLS_UPDATE=0 PATH=$PWD/depot_tools:$PATH
           cd dart-sdk/sdk
-          ./tools/build.py --mode release --arch arm64 create_sdk
-
-      - name: Archive and Upload Artifact
-        run: |
-          cd dart-sdk/sdk/out/ReleaseX64_android_arm64
-          tar -czf full_sdk_output.tar.gz .
+          python3 ./tools/build.py --mode release --os android --arch arm64 create_sdk
+      - name: Upload RAW build output as a safety artifact
         uses: actions/upload-artifact@v4
         with:
-          name: full-sdk-output-android-arm64
-          path: dart-sdk/sdk/out/ReleaseX64_android_arm64/full_sdk_output.tar.gz
+          name: raw-build-output
+          path: dart-sdk/sdk/out/
+
+  package:
+    needs: compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y tar
+      - name: Download the RAW build output
+        uses: actions/download-artifact@v4
+        with:
+          name: raw-build-output
+      - name: Archive the ENTIRE build output
+        run: |
+          cd ReleaseX64_android_arm64
+          tar -czf full_sdk_output.tar.gz .
+      - name: Upload the Full SDK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-dart-sdk-android-arm64
+          path: ReleaseX64_android_arm64/full_sdk_output.tar.gz
