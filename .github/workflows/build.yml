@@ -1,17 +1,23 @@
-name: Build gen_snapshot for Android ARM64
+name: Build Full Dart SDK Output for Android ARM64
+
 on: [workflow_dispatch]
+
 jobs:
   build:
     container:
       image: docker.io/library/debian
+
     runs-on: ubuntu-latest
+
     steps:
       - name: Install build tools
         run: |
           apt-get update
           apt-get install --no-install-recommends -y ca-certificates curl git python3 tar
+
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Cache depot_tools and Dart SDK sources
         id: cache-dart
         uses: actions/cache@v4
@@ -19,7 +25,8 @@ jobs:
           path: |
             depot_tools
             dart-sdk
-          key: ${{ runner.os }}-debian-dart-3.9.0-final
+          key: ${{ runner.os }}-debian-dart-3.9.0-the-final-one
+
       - name: Fetch Dart SDK and Android Dependencies
         if: steps.cache-dart.outputs.cache-hit != 'true'
         run: |
@@ -29,6 +36,7 @@ jobs:
           cd dart-sdk
           gclient config --name sdk --custom-var download_android_deps=True "https://dart.googlesource.com/sdk.git@3.9.0"
           gclient sync --no-history
+
       - name: Create custom args.gn for Android build
         run: |
           cd dart-sdk/sdk
@@ -45,17 +53,26 @@ jobs:
           is_clang = true
           use_goma = false
           ' > out/ReleaseX64_android_arm64/args.gn
+
       - name: Build
         run: |
           export DEPOT_TOOLS_UPDATE=0 PATH=$PWD/depot_tools:$PATH
           cd dart-sdk/sdk
           ./tools/build.py --mode release --arch arm64 create_sdk
-      - name: Archive the binary
+
+      - name: Archive the ENTIRE build output directory
         run: |
-          cd dart-sdk/sdk/out/Release*
-          tar -czf gen_snapshot.tar.gz gen_snapshot*
+          
+          OUTPUT_PARENT_DIR=$(find dart-sdk/sdk -name "gen_snapshot" -printf "%h" | xargs dirname)
+          echo "Found output parent directory: $OUTPUT_PARENT_DIR"
+          
+          cd $OUTPUT_PARENT_DIR
+
+          OUTPUT_DIR_NAME=$(find . -name "gen_snapshot" -printf "%h" | xargs basename)
+          tar -czf full_sdk_output.tar.gz $OUTPUT_DIR_NAME
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gen_snapshot-android-arm64
-          path: dart-sdk/sdk/out/Release*/gen_snapshot.tar.gz
+          name: full-sdk-output-android-arm64
+          path: dart-sdk/sdk/out/full_sdk_output.tar.gz
