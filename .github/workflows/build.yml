@@ -1,6 +1,27 @@
-name: Build Full Dart SDK for Android ARM64 (The Final Version)
-on: [workflow_dispatch]
+name: Dart SDK for Android Builder (Full Control)
+
+on:
+  workflow_dispatch:
+    inputs:
+      host_arch:
+        description: 'Host Architecture (for gen_snapshot itself: arm64 or arm)'
+        required: true
+        type: choice
+        default: 'arm64'
+        options:
+          - arm64
+          - arm
+      target_arch:
+        description: 'Target Architecture (for the final libapp.so: arm64c or arm)'
+        required: true
+        type: choice
+        default: 'arm64c'
+        options:
+          - arm64c
+          - arm
+
 jobs:
+  # --- ЗАДАЧА №1: КОМПИЛЯЦИЯ С ПОЛНЫМ КОНТРОЛЕМ ---
   compile:
     container:
       image: docker.io/library/debian
@@ -19,7 +40,7 @@ jobs:
           path: |
             depot_tools
             dart-sdk
-          key: ${{ runner.os }}-debian-dart-3.9.0-the-very-final-one
+          key: ${{ runner.os }}-debian-dart-3.9.0-host-${{ inputs.host_arch }}-target-${{ inputs.target_arch }}
       - name: Fetch Dart SDK and Android Dependencies
         if: steps.cache-dart.outputs.cache-hit != 'true'
         run: |
@@ -29,36 +50,44 @@ jobs:
           cd dart-sdk
           gclient config --name sdk --custom-var download_android_deps=True "https://dart.googlesource.com/sdk.git@3.9.0"
           gclient sync --no-history
-      - name: Build the full SDK for Android ARM64
+      - name: Build with Direct Command-Line Flag Injection
         run: |
           export DEPOT_TOOLS_UPDATE=0 PATH=$PWD/depot_tools:$PATH
           cd dart-sdk/sdk
-          python3 ./tools/build.py --mode release --os android --arch arm64c create_sdk
+          
+          # ЭТО ФИНАЛЬНЫЙ ПРИКАЗ. ОН НЕ МОЖЕТ БЫТЬ ПРОИГНОРИРОВАН.
+          python3 ./tools/build.py \
+            --mode release \
+            --os android \
+            --arch ${{ inputs.target_arch }} \
+            create_sdk \
+            --gn-args="host_os=\"android\" host_cpu=\"${{ inputs.host_arch }}\" dart_use_compressed_pointers=${{ inputs.target_arch == 'arm64c' }}"
+
       - name: Upload RAW build output as a safety artifact
         uses: actions/upload-artifact@v4
         with:
-          name: raw-build-output
+          name: raw-build-output-host-${{ inputs.host_arch }}-target-${{ inputs.target_arch }}
           path: dart-sdk/sdk/out/
 
+  # --- ЗАДАЧА №2: УПАКОВКА (БЫСТРАЯ, БЕЗОПАСНАЯ) ---
   package:
     needs: compile
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y tar binutils
+        run: sudo apt-get update && sudo apt-get install -y tar
       - name: Download the RAW build output
         uses: actions/download-artifact@v4
         with:
-          name: raw-build-output
-      - name: Strip and Archive the final SDK
+          name: raw-build-output-host-${{ inputs.host_arch }}-target-${{ inputs.target_arch }}
+      - name: Archive the final SDK
         run: |
-          SNAPSHOT_DIR=$(find . -type d -name "*arm64c*")
-          echo "Found snapshot directory: $SNAPSHOT_DIR"
-          cd "$SNAPSHOT_DIR"
-          strip gen_snapshot* dartaotruntime*
+          OUTPUT_DIR=$(find . -type d -name "Release*android_${{ inputs.target_arch }}*")
+          echo "Found snapshot directory: $OUTPUT_DIR"
+          cd "$OUTPUT_DIR"
           tar -czf full_sdk_output.tar.gz .
-      - name: Upload the final STRIPPED artifact
+      - name: Upload the final artifact
         uses: actions/upload-artifact@v4
         with:
-          name: full-dart-sdk-android-arm64c-stripped
+          name: full-dart-sdk-host-${{ inputs.host_arch }}-target-${{ inputs.target_arch }}
           path: "**/full_sdk_output.tar.gz"
