@@ -72,20 +72,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y tar binutils
+        run: sudo apt-get update && sudo apt-get install -y tar
       - name: Download the RAW build output
         uses: actions/download-artifact@v4
         with:
           name: raw-build-output-host-${{ inputs.host_arch }}-target-${{ inputs.target_arch }}
-      - name: Strip and Archive the final SDK
+      - name: Archive the final SDK
         run: |
+          # Пуленепробиваемый поиск папки
           OUTPUT_DIR=$(find . -type d -name "Release*android_${{ inputs.target_arch }}*")
           echo "Found snapshot directory: $OUTPUT_DIR"
           cd "$OUTPUT_DIR"
-          strip gen_snapshot* dartaotruntime*
           tar -czf full_sdk_output.tar.gz .
-      - name: Upload the final STRIPPED artifact
+      - name: Upload the final artifact
         uses: actions/upload-artifact@v4
         with:
-          name: full-dart-sdk-host-${{ inputs.host_arch }}-target-${{ inputs.target_arch }}-stripped
+          name: full-dart-sdk-host-${{ inputs.host_arch }}-target-${{ inputs.target_arch }}
           path: "**/full_sdk_output.tar.gz"
